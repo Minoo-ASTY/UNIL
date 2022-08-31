@@ -1,0 +1,248 @@
+---
+title: "UNIL.task"
+author: "Minoo Ashtiani"
+date: '2022-08-25'
+output: html_document
+---
+
+# Hands on BgeeCall package 
+
+Bgee database: Bgee is a database to retrieve and compare gene expression patterns in multiple animal species and produced from multiple data types (RNA-Seq, Affymetrix, in situ hybridization, and EST data). It notably integrates RNA-Seq libraries for 29 species.
+
+Reference intergenic regions: Reference intergenic regions are defined in the Bgee RNA-Seq pipeline. Candidate intergenic regions are defined using gene annotation data. For each species, over all available libraries, reads are mapped to these intergenic regions with kallisto, as well as to genes. This “intergenic expression” is deconvoluted to distinguish reference intergenic from non annotated genes, which have higher expression. Reference intergenic regions are then defined as intergenic regions with low expression level over all RNA-Seq libraries, relative to genes. This step allows not to consider regions wrongly considered as intergenic because of potential gene annotation quality problem as intergenic.
+
+Threshold of present/absent: By default BgeeCall calculate a pValue to define calls. By default genes are consider present if the pValue is lower or equal to 0.05.
+
+## Get transcriptome and annotation files
+
+1) Extract transcriptome and annotation files for Drosophila melanogaster from the Ensembl database using the download.file() function (Note: use the following links to download annotation and cdna file: 
+http://ftp.ensemblgenomes.org/pub/release-51/metazoa/gtf/drosophila_melanogaster/Drosophila_melanogaster.BDGP6.32.51.chr.gtf.gz & http://ftp.ensemblgenomes.org/pub/release-51/metazoa/fasta/drosophila_melanogaster/cdna/Drosophila_melanogaster.BDGP6.32.cdna.all.fa.gz). 
+
+
+```{r}
+# annotation<-download.file(url='http://ftp.ensemblgenomes.org/pub/release-51/metazoa/gtf/drosophila_melanogaster/Drosophila_melanogaster.BDGP6.32.51.chr.gtf.gz', destfile='annotation/Drosophila_melanogaster.BDGP6.32.51.chr.gtf.gz', method='curl')
+# 
+# cdna<-download.file(url='http://ftp.ensemblgenomes.org/pub/release-51/metazoa/fasta/drosophila_melanogaster/cdna/Drosophila_melanogaster.BDGP6.32.cdna.all.fa.gz', destfile='annotation/Drosophila_melanogaster.BDGP6.32.cdna.all.fa.gz', method='curl')
+```
+
+## Retrieve intergenic information
+
+1) List all intergenic releases available in BgeeCall. How many exist?
+
+2) Verify which species are available for the current Bgee intergenic release. How many exist?
+
+3) Verify which species belong to the community. How many exist?
+
+```{r}
+# Install the package
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+# BiocManager::install("BgeeCall")
+
+# Load the package
+library(BgeeCall)
+
+list_intergenic_release()
+
+# create BgeeMetadata object and define one reference intergenic release
+bgee <- new("BgeeMetadata", intergenic_release = "1.0")
+#> Querying Bgee to get intergenic release information..
+
+# List all species for which Bgee reference intergenic sequences
+list_bgee_ref_intergenic_species(myBgeeMetadata = bgee)
+
+# Number of available species in Bgee 1.0
+nrow(list_bgee_ref_intergenic_species(myBgeeMetadata = bgee))
+
+# Community reference intergenic
+list_community_ref_intergenic_species()
+
+```
+
+## Use BgeeCall to download the pseudo-alignment software
+
+1) Create an object of the KallistoMetadata class.
+
+2) If you don’t have Kallisto software installed on your computer, specify the argument download_kallisto = TRUE, otherwise leave download_kallisto attribute by default FALSE.
+
+a) if you don’t know whether you have Kallisto installed just check that by typing the following command in the terminal: `kallisto version`
+
+
+```{r}
+
+kallisto <- new("KallistoMetadata", download_kallisto = F)
+# calls_output <- generate_calls_workflow(myAbundanceMetadata = kallisto, userMetadata = user_BgeeCall)
+
+```
+
+## Run analysis: Drosophila melanogaster 1 sample
+
+1) Create a userMetadata object (note that you have to specify in the argument species_id the Taxonomy ID, you can verify that in https://bgee.org/ in the See species information). 
+
+Species: Drosophila melanogaster (fruit fly)
+Scientific name: Drosophila melanogaster
+Common name: fruit fly
+Species ID: 7227
+Genome source:  Ensembl
+Genome version: BDGP6.28
+
+To start, we need:
+>- a transcriptome
+>- gene annotations
+>- your RNA-Seq reads in fastq files
+
+2) What happens if the argument reads_size is not specified by you when you create the new userMetadata object? What can be the impact in general? Reads size of RNA-Seq libraries can be found in SRA (e.g https://www.ncbi.nlm.nih.gov/sra/?term=SRX109278)
+
+- Read depth varies depending on the goals of the RNA-Seq study. Most experiments require 5–200 million reads per sample, depending on organism complexity and size, along with project aims.
+
+3) Specify by using the following functions `setRNASeqLibPath()`, `setTranscriptomeFromFile()`, `setAnnotationFromFile()`, `setOutputDir()` and `setWorkingPath()` the path to your library `SRX109278`, transcriptome file, annotation file as well as the output and working directory. 
+
+4) Generate the present and absent calls for the library `SRX109278` by using `generate_calls_workflow()`. Which type of information is provided in the output files?
+
+bash:
+
+```{r echo=FALSE, eval=FALSE}
+  
+  # conda install -c bioconda kallisto
+  
+cd /Users/minooashtiani/Desktop/UNIL.task
+
+# kallisto quantifies read files directly without the need for read alignment, but it does perform a procedure called pseudoalignment. Pseudoalignment requires processing a transcriptome file to create a “transcriptome index”.
+# build an index type
+kallisto index -i transcripts.idx annotation/Drosophila_melanogaster.BDGP6.32.cdna.all.fa.gz
+
+# quantify abundances of the transcripts using a single read file
+kallisto quant -i transcripts.idx -o /Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX109278/ -b 100 --single -l 180 -s 20 /Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX109278/SRR384929.fastq.gz
+
+```
+
+
+R:
+
+```{r echo=FALSE, eval=FALSE}
+
+library(BgeeCall)
+# library(AnnotationHub)
+# ah <- AnnotationHub()
+# ah_resources <- query(ah, c('Ensembl', 'Drosophila melanogaster','32'))
+# annotation_object <- ah_resources[["AH89791"]] # Drosophila_melanogaster.BDGP6.32.103.gtf
+
+
+# remove MtDNA not tag as Drosophila_melanogaster genome
+# annotation_object <- dropSeqlevels(annotation_object, "MtDNA", "coarse")
+# transcriptome_object <- rtracklayer::import.2bit(ah_resources[["AH90689"]])# Drosophila_melanogaster.BDGP6.32.cdna.all.2bit 
+
+# create an object of class UserMetadata and specify the species ID
+user_BgeeCall <- new("UserMetadata", species_id = "7227")
+
+# import annotation and transcriptome in the user_BgeeCall object
+# it is possible to import them using an S4 object (GRanges, DNAStringSet) or a file (gtf, fasta)
+user_BgeeCall <- setAnnotationFromFile(user_BgeeCall, "/Users/minooashtiani/Desktop/UNIL.task/annotation/Drosophila_melanogaster.BDGP6.32.51.chr.gtf.gz", "Drosophila_melanogaster.BDGP6.32.51")
+user_BgeeCall <- setTranscriptomeFromFile(user_BgeeCall, "/Users/minooashtiani/Desktop/UNIL.task/annotation/Drosophila_melanogaster.BDGP6.32.cdna.all.fa.gz", "Drosophila_melanogaster.BDGP6.32.51")
+
+# user <- new("UserMetadata")
+user_BgeeCall <- setWorkingPath(user_BgeeCall, "/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX109278")
+user_BgeeCall <- setOutputDir(user_BgeeCall, "/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX109278")
+
+# provide path to the directory of your RNA-Seq library
+user_BgeeCall <- setRNASeqLibPath(user_BgeeCall, "/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX109278/SRR384929.fastq.gz")
+
+calls_output <- generate_calls_workflow(userMetadata = user_BgeeCall)
+
+head(read.table(calls_output$calls_tsv_path, header = TRUE), n = 5)
+
+```
+
+5) Plot the frequency of p-values for the correspondent library.
+
+```{r echo=FALSE, eval=FALSE}
+
+```
+
+## Run analysis: multiple Drosophila melanogaster samples
+
+1) Create a user input file describing all RNA-Seq libraries previously downloaded, see https://github.com/BgeeDB/BgeeCall/blob/develop/inst/userMetadataTemplate.tsv and the vignette of the package for more information
+
+```{r}
+
+userMetadataTemplate<-tibble(species_id=rep(7227, 6),	run_ids=rep("-",6),	reads_size=rep(x = 51,6),	rnaseq_lib_path=c("/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX109278/","/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX109279/","/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX493950/","/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX493999/","/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX1720957/","/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX1720958/"),	transcriptome_path=rep("/Users/minooashtiani/Desktop/UNIL.task/annotation/Drosophila_melanogaster.BDGP6.32.cdna.all.fa",6),	annotation_path=rep("/Users/minooashtiani/Desktop/UNIL.task/annotation/Drosophila_melanogaster.BDGP6.32.51.chr.gtf",6),	output_directory=c("/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX109278/","/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX109279/","/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX493950/","/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX493999/","/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX1720957/","/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX1720958/"),	custom_intergenic_path=rep("-",6),devStage=c("day 4 of adulthood (ID : FBdv:00007079)","day 4 of adulthood (ID : FBdv:00007079)","day 4 of adulthood (ID : FBdv:00007079)","day 4 of adulthood (ID : FBdv:00007079)","fully formed stage (ID : UBERON:0000066)","fully formed stage (ID : UBERON:0000066)"))
+
+userMetadataTemplate
+write.table(userMetadataTemplate, file = "userMetadataTemplate.tsv", row.names=FALSE, sep="\t")
+
+
+```
+
+
+2) Run the generation of present and absent calls from the user file with default values for all .
+
+```{r}
+
+calls_output <- generate_calls_workflow(userFile = "userMetadataTemplate.tsv")
+
+```
+
+
+3) Combine multiple libraries per species using the `merging_libraries()` function. What is the proportion of genes present?
+
+```{r}
+mergingLibraries <- merging_libraries(userFile = "userMetadataTemplate.tsv", approach = "BH", condition = "species_id", cutoff = 0.05, outDir = getwd())
+
+```
+
+4) Modify the input file to combine libraries per species (`species_id`) and developmental stage (`devStage`), see the structure of the file here: https://github.com/BgeeDB/BgeeCall/blob/develop/inst/userMetadataTemplate_merging.tsv 
+developmental stages of libraries :
+
+- fully formed stage (ID : UBERON:0000066) for libraries  SRX1720957 and SRX1720958
+- day 4 of adulthood (ID : FBdv:00007079) for libraries SRX493950, SRX493999, SRX109278 and SRX109279
+
+```{r}
+
+mergingLibraries <- merging_libraries(userFile = "userMetadataTemplate.tsv", approach = "BH", condition = c("species_id", "devStage"), cutoff = 0.01, outDir = getwd())
+
+```
+
+5) Generate the present and absent calls with a more restrictive p-value = 0.01 
+
+```{r}
+calls_output <- generate_calls_workflow(userFile = "userMetadataTemplate.tsv")
+
+```
+
+6) Get summary stats of all libraries by using `get_summary_stats()` function.
+
+```{r}
+summaryStats <- get_summary_stats(userFile = "userMetadataTemplate.tsv", outDir = getwd())
+
+```
+
+7) Plot the proportion of protein coding genes of all libraries for each p-value cut-off.
+
+```{r}
+
+```
+
+## Downstream analysis
+
+The aim of this part is to show you that you can go from BgeeCall results to forward analysis. 
+
+
+1) Perform a differential expression analysis between different developmental stage conditions. (Note: that in the provided dataset we have 4 samples from FBdv:00007079 and 2 samples from UBERON:0000066, so you can select just 2 samples from FBdv:00007079 (like: SRX109278 and SRX109279) to balance the analysis. Note that statistically it is recommended to use at least 3 samples of each condition for differential expression analysis).
+
+
+```{r}
+
+```
+
+2) Filter the results by providing just genes with FDR < 0.01. Provide a visualization graphic as MA plot. 
+
+```{r}
+
+```
+
+3) Make a GO analysis. Which type of information do you retrieve? 
+
+```{r}
+
+```
+
