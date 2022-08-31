@@ -1,7 +1,7 @@
 ---
 title: "UNIL.task"
 author: "Minoo Ashtiani"
-date: '2022-08-25'
+date: '2022-08-31'
 output: html_document
 ---
 
@@ -138,6 +138,7 @@ user_BgeeCall <- new("UserMetadata", species_id = "7227")
 # import annotation and transcriptome in the user_BgeeCall object
 # it is possible to import them using an S4 object (GRanges, DNAStringSet) or a file (gtf, fasta)
 user_BgeeCall <- setAnnotationFromFile(user_BgeeCall, "/Users/minooashtiani/Desktop/UNIL.task/annotation/Drosophila_melanogaster.BDGP6.32.51.chr.gtf.gz", "Drosophila_melanogaster.BDGP6.32.51")
+
 user_BgeeCall <- setTranscriptomeFromFile(user_BgeeCall, "/Users/minooashtiani/Desktop/UNIL.task/annotation/Drosophila_melanogaster.BDGP6.32.cdna.all.fa.gz", "Drosophila_melanogaster.BDGP6.32.51")
 
 # user <- new("UserMetadata")
@@ -231,18 +232,282 @@ The aim of this part is to show you that you can go from BgeeCall results to for
 
 
 ```{r}
+library(tidyverse)
+library("DESeq2")
 
+colData<- DataFrame(row.names = c(   "sample1",
+             "sample2",
+             "sample3",
+             "sample4",
+             "sample5",
+             "sample6"),
+                    condition=c("day 4 of adulthood (ID : FBdv:00007079)","day 4 of adulthood (ID : FBdv:00007079)","day 4 of adulthood (ID : FBdv:00007079)","fully formed stage (ID : UBERON:0000066)","fully formed stage (ID : UBERON:0000066)","fully formed stage (ID : UBERON:0000066)"))
+
+colData$condition<-as.factor(colData$condition)
+colData
+
+# coldata <- colData(gse)
+colData$condition <- relevel(colData$condition , "day 4 of adulthood (ID : FBdv:00007079)")
+
+cstm<- counts
+
+#column sums of the count
+colSums(cstm)
+
+# Normalization using DESeq2 (size factors)
+# biocLite("DESeq2")
+library(DESeq2)
+# dds <- DESeqDataSetFromMatrix(countData = cstm,
+#                          colData = colData,design = ~ condition )
+dds <- DESeqDataSetFromMatrix(countData = cstm,
+                         colData = colData,design = ~ Patient+condition )
+# names(assays(dds))
+
+## Checking the millions of fragments which uniquely aligned to the genes
+round( colSums(assay(dds)) / 1e6, 1 )
+
+# minimal pre-filtering to keep only rows that have at least 10 reads total.
+keep <- rowSums(counts(dds)) >= 10
+dds <- dds[keep,]
+rm(keep)
+
+#Estimate size factors
+dds <- estimateSizeFactors( dds )
+
+## The variance stabilizing transformation and the rlog
+library("dplyr")
+library("ggplot2")
+
+vsd <- vst(dds, blind = FALSE)
+rld <- rlog(dds, blind = FALSE)
+
+dds <- estimateSizeFactors(dds)
+
+df <- bind_rows(
+  as_data_frame(log2(counts(dds, normalized=TRUE)[, 1:2]+1)) %>%
+         mutate(transformation = "log2(x + 1)"),
+  as_data_frame(assay(vsd)[, 1:2]) %>% mutate(transformation = "vst"),
+  as_data_frame(assay(rld)[, 1:2]) %>% mutate(transformation = "rlog"))
+  
+colnames(df)[1:2] <- c("x", "y")  
+
+lvls <- c("log2(x + 1)", "vst", "rlog")
+df$transformation <- factor(df$transformation, levels=lvls)
+
+ggplot(df, aes(x = x, y = y)) + geom_hex(bins = 80) +
+  coord_fixed() + facet_grid( . ~ transformation)
+
+# ## Assessment of Overall Similarity between Samples
+sampleDists <- dist( t( assay(rld) ) )
+
+library("pheatmap")
+library("RColorBrewer")
+library(grid)
+
+sampleDistMatrix <- as.matrix( sampleDists )
+rownames(sampleDistMatrix) <- paste( rld$condition, rld$Patient, sep="-" )
+colnames(sampleDistMatrix) <- paste( rld$condition, rld$Patient, sep="-" )
+colors <- colorRampPalette( rev(brewer.pal(9, "Greens")) )(255)
+
+## Edit body of pheatmap:::draw_colnames, customizing it to your liking
+draw_colnames_45 <- function (coln, ...) {
+    m = length(coln)
+    x = (1:m)/m - 1/2/m
+    grid.text(coln, x = x, y = unit(0.96, "npc"), vjust = .5, 
+        hjust = 1, rot = 45, gp = gpar(...)) ## Was 'hjust=0' and 'rot=270'
+}
+
+## For pheatmap_1.0.8 and later:
+draw_colnames_45 <- function (coln, gaps, ...) {
+    coord = pheatmap:::find_coordinates(length(coln), gaps)
+    x = coord$coord - 0.5 * coord$size
+    res = textGrob(coln, x = x, y = unit(1, "npc") - unit(3,"bigpts"), vjust = 0.5, hjust = 1, rot = 45, gp = gpar(...))
+    return(res)}
+
+## 'Overwrite' default draw_colnames with your own version 
+assignInNamespace(x="draw_colnames", value="draw_colnames_45",
+ns=asNamespace("pheatmap"))
+
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows=sampleDists,
+         clustering_distance_cols=sampleDists,
+         col=colors)
+
+# PCA
+
+pcaData <- plotPCA(rld, intgroup = c( "condition", "Patient"), returnData = TRUE)
+
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+
+ggplot(pcaData, aes(x = PC1, y = PC2, color = condition, shape = Patient)) +
+  geom_point(size =3) +
+  xlab(paste0("PC1: ", percentVar[1], "% variance")) +
+  ylab(paste0("PC2: ", percentVar[2], "% variance")) +
+  coord_fixed() +
+  ggtitle("PCA with rlog data")
+
+## Differential Gene Expression Analysis
+dds$condition <- relevel(dds$condition, "day 4 of adulthood (ID : FBdv:00007079)")
+
+dds <- DESeq(dds)
+res <- results(dds)
+
+dfres<-as.data.frame(res)
+
+## Summary of results
+
+summary(res)
+
+# #Top genes : sort by log2FoldChange
+resSort <- res[order(res$log2FoldChange),]
+head(resSort)
+
+## Volcano plot
+library("EnhancedVolcano")
+# rownames(res)
+# library(xlsx)
+# is.num <- sapply(df, is.numeric)
+# df[is.num] <- lapply(df[is.num], round, 4)
+# write.xlsx(df, "logfoldChangefromRNAseqAnalysis.xlsx", col.names = TRUE, row.names = TRUE)
+
+# Save an object to a file
+# saveRDS(d, file = "EnsemblevsGenes.rds")
+# Restore the object
+# d<-readRDS(file = "EnsemblevsGenes.rds")
+
+df<-as.data.frame(res)
+df$EnsembleID<-rownames(df)
+ress <- left_join(df,d,by="EnsembleID")
+# ress1<-ress[,c(7,8,1,2,3,4,5,6)]
+
+head(ress1)
+
+ress1<-ress1[!duplicated(ress1$GeneName),]
+
+
+ress1<-ress1%>% remove_rownames %>% column_to_rownames(var="GeneName")
+
+ress1<-ress1[,-1]
+# write_csv2(counts,"RNAeqCounts.xls")
+# library(data.table)
+# dt <- data.table(df)
+#take highest values from counts for each duplicate
+# ds<-setDT(dt)[, lapply(.SD, max) , EnsembleID]
+# rm(list=setdiff(ls(), "counts"))
+
+head(ress1)
+
+# The main function is named after the package
+EnhancedVolcano(toptable = res,              # We use the shrunken log2 fold change as noise associated with low count genes is removed 
+                x = "log2FoldChange",           # Name of the column in resLFC that contains the log2 fold changes
+                y = "padj",                     # Name of the column in resLFC that contains the p-value
+                lab = ress$GeneName,pointSize = 5,
+  labSize = 10,  legendLabSize = 20,
+  legendIconSize = 10,  encircleSize = 3.5,xlim = c(-5,5))
 ```
 
 2) Filter the results by providing just genes with FDR < 0.01. Provide a visualization graphic as MA plot. 
 
 ```{r}
-
+# MA plot
+res.noshr <- results(dds, name="condition_fully formed stage (ID : UBERON:0000066)_vs_day 4 of adulthood (ID : FBdv:00007079)")
+plotMA(res.noshr, ylim = c(-5,5))
 ```
 
 3) Make a GO analysis. Which type of information do you retrieve? 
 
 ```{r}
+library(rWikiPathways)
+
+load.libs <- c(
+  "DOSE",
+  "GO.db",
+  "GSEABase",
+  "org.Hs.eg.db",
+  "clusterProfiler",
+  "dplyr",
+  "tidyr",
+  "ggplot2",
+  "stringr",
+  "RColorBrewer",
+  "rWikiPathways",
+  "RCy3")
+
+# options(install.packages.check.source = "no")
+# options(install.packages.compile.from.source = "never")
+# if (!require("pacman")) install.packages("pacman"); library(pacman)
+# p_load(load.libs, update = TRUE, character.only = TRUE)
+# status <- sapply(load.libs,require,character.only = TRUE)
+# if(all(status)){
+#   print("SUCCESS: You have successfully installed and loaded all required libraries.")
+# } else{
+#   cat("ERROR: One or more libraries failed to install correctly. Check the following list for FALSE cases and try again...\n\n")
+#   status
+# }
+
+library(RCy3)
+#Installl cytoscape
+# The RCy3 package is used to connect with Cytoscape. So you will also need to install and launch Cytoscape:
+#   
+#   Download the latest Cytoscape from https://cytoscape.org/download.html
+# Complete installation wizard
+# Launch Cytoscape
+cytoscapePing()  #this will tell you if you're able to successfully connect to
+
+# installApp('WikiPathways') 
+# installApp('CyTargetLinker') 
+# installApp('stringApp') 
+# installApp('enrichmentMap')
+
+# lung.expr <- read.csv(system.file("extdata","data-lung-cancer.csv", package="rWikiPathways"),stringsAsFactors = FALSE)
+# nrow(lung.expr)
+# head(lung.expr)
+
+# Now let’s prepare up- and down-regulated gene lists using some conventional criteria.
+
+# up.genes <- lung.expr[lung.expr$log2FC > 1 & lung.expr$adj.P.Value < 0.05, 1]
+# dn.genes <- lung.expr[lung.expr$log2FC < -1 & lung.expr$adj.P.Value < 0.05, 1]
+# bkgd.genes <- lung.expr[,1]
+
+genes<-rownames(df.sort)
+upregulated<-head(rownames(df.sort), n=2000)
+downregulated<-tail(rownames(df.sort), n=2000)
+combregualted<-c(upregulated,downregulated)
+# subzscore<-Zscore[top.genes, ]
+
+# Enrichment
+# With our gene sets in hand, we are ready to perform enrichment analysis… well, almost. Typical of any bioinformatics analysis, we need to be aware of which gene identifiers we are dealing with. We have Ensembl IDs, but the package we are going to use wants Entrez IDs. Fortunately, the package provides its own converter called bitr. This is the first function in the clusterProfiler package that we’ll be using:
+library(org.Hs.eg.db)
+combregualted.entrez <- clusterProfiler::bitr(downregulated,fromType = "SYMBOL",toType = "ENTREZID",OrgDb = org.Hs.eg.db)
+cat("\n\nWhich column contains my new Entrez IDs?\n")
+head(combregualted.entrez)
+
+# Note that conversions are rarely 100% complete (e.g., due to one-to-many mappings), so this tool reports what it failed to convert. And now we have a dataframe with a new column of Entrez IDs paired with our original list of Ensembl IDs.
+
+# Here’s the complete list of identifiers that this particular tool can convert across. You have to spell these precisely and in all caps for the bitr function to work:
+keytypes(org.Hs.eg.db)
+
+# Let’s convert our other lists to Entrez IDs:
+# dn.genes.entrez <- bitr(dn.genes,fromType = "ENSEMBL",toType = "ENTREZID",OrgDb = org.Hs.eg.db)
+# bkgd.genes.entrez <- bitr(bkgd.genes,fromType = "ENSEMBL",toType = "ENTREZID",OrgDb = org.Hs.eg.db)
+
+
+# Gene Ontology
+egobp <- clusterProfiler::enrichGO(
+  gene     = combregualted.entrez[[2]],
+  # universe = bkgd.genes.entrez[[2]],
+  OrgDb    = org.Hs.eg.db,
+  ont      = "BP",
+  pAdjustMethod = "fdr",
+  pvalueCutoff = 0.05, #p.adjust cutoff (https://github.com/GuangchuangYu/clusterProfiler/issues/104)
+  readable = TRUE)
+
+ head(egobp,10)
+
+#Pathway Analysis
+barplot(egobp, showCategory = 40)
+dotplot(egobp, showCategory = 40)
+goplot(egobp)
 
 ```
 
