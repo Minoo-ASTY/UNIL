@@ -1,0 +1,508 @@
+---
+title: "UNIL.task"
+author: "Minoo Ashtiani"
+date: '2022-09-01'
+output: html_document
+---
+
+# Hands on BgeeCall package 
+
+Bgee database: Bgee is a database to retrieve and compare gene expression patterns in multiple animal species and produced from multiple data types (RNA-Seq, Affymetrix, in situ hybridization, and EST data). It notably integrates RNA-Seq libraries for 29 species.
+
+Reference intergenic regions: Reference intergenic regions are defined in the Bgee RNA-Seq pipeline. Candidate intergenic regions are defined using gene annotation data. For each species, over all available libraries, reads are mapped to these intergenic regions with kallisto, as well as to genes. This “intergenic expression” is deconvoluted to distinguish reference intergenic from non annotated genes, which have higher expression. Reference intergenic regions are then defined as intergenic regions with low expression level over all RNA-Seq libraries, relative to genes. This step allows not to consider regions wrongly considered as intergenic because of potential gene annotation quality problem as intergenic.
+
+Threshold of present/absent: By default BgeeCall calculate a pValue to define calls. By default genes are consider present if the pValue is lower or equal to 0.05.
+
+## Get transcriptome and annotation files
+
+1) Extract transcriptome and annotation files for Drosophila melanogaster from the Ensembl database using the download.file() function (Note: use the following links to download annotation and cdna file: 
+http://ftp.ensemblgenomes.org/pub/release-51/metazoa/gtf/drosophila_melanogaster/Drosophila_melanogaster.BDGP6.32.51.chr.gtf.gz & http://ftp.ensemblgenomes.org/pub/release-51/metazoa/fasta/drosophila_melanogaster/cdna/Drosophila_melanogaster.BDGP6.32.cdna.all.fa.gz). 
+
+
+```{r message=FALSE, echo=TRUE, eval=TRUE, iclude=FALSE, warning=FALSE}
+# annotation<-download.file(url='http://ftp.ensemblgenomes.org/pub/release-51/metazoa/gtf/drosophila_melanogaster/Drosophila_melanogaster.BDGP6.32.51.chr.gtf.gz', destfile='annotation/Drosophila_melanogaster.BDGP6.32.51.chr.gtf.gz', method='curl')
+# 
+# cdna<-download.file(url='http://ftp.ensemblgenomes.org/pub/release-51/metazoa/fasta/drosophila_melanogaster/cdna/Drosophila_melanogaster.BDGP6.32.cdna.all.fa.gz', destfile='annotation/Drosophila_melanogaster.BDGP6.32.cdna.all.fa.gz', method='curl')
+```
+
+## Retrieve intergenic information
+
+1) List all intergenic releases available in BgeeCall. How many exist?
+
+2) Verify which species are available for the current Bgee intergenic release. How many exist?
+
+3) Verify which species belong to the community. How many exist?
+
+```{r message=FALSE, echo=TRUE, eval=TRUE, iclude=FALSE, warning=FALSE}
+# Install the package
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+# BiocManager::install("BgeeCall")
+
+# install.packages("devtools")
+# library(devtools)
+# install_github("BgeeDB/BgeeCall")
+
+# Load the package
+library(BgeeCall)
+
+list_intergenic_release()
+
+# create BgeeMetadata object and define one reference intergenic release
+bgee <- new("BgeeMetadata", intergenic_release = "1.0")
+#> Querying Bgee to get intergenic release information..
+
+# List all species for which Bgee reference intergenic sequences
+list_bgee_ref_intergenic_species(myBgeeMetadata = bgee)
+
+# Number of available species in Bgee 1.0
+nrow(list_bgee_ref_intergenic_species(myBgeeMetadata = bgee))
+
+# Community reference intergenic
+list_community_ref_intergenic_species()
+
+```
+
+## Use BgeeCall to download the pseudo-alignment software
+
+1) Create an object of the KallistoMetadata class.
+
+2) If you don’t have Kallisto software installed on your computer, specify the argument download_kallisto = TRUE, otherwise leave download_kallisto attribute by default FALSE.
+
+a) if you don’t know whether you have Kallisto installed just check that by typing the following command in the terminal: `kallisto version`
+
+
+```{r message=FALSE, echo=TRUE, eval=TRUE, iclude=FALSE, warning=FALSE}
+
+kallisto <- new("KallistoMetadata", download_kallisto = F)
+# calls_output <- generate_calls_workflow(myAbundanceMetadata = kallisto, userMetadata = user_BgeeCall)
+
+```
+
+## Run analysis: Drosophila melanogaster 1 sample
+
+1) Create a userMetadata object (note that you have to specify in the argument species_id the Taxonomy ID, you can verify that in https://bgee.org/ in the See species information). 
+
+Species: Drosophila melanogaster (fruit fly)
+Scientific name: Drosophila melanogaster
+Common name: fruit fly
+Species ID: 7227
+Genome source:  Ensembl
+Genome version: BDGP6.28
+
+To start, we need:
+>- a transcriptome
+>- gene annotations
+>- your RNA-Seq reads in fastq files
+
+2) What happens if the argument reads_size is not specified by you when you create the new userMetadata object? What can be the impact in general? Reads size of RNA-Seq libraries can be found in SRA (e.g https://www.ncbi.nlm.nih.gov/sra/?term=SRX109278)
+
+- Read depth varies depending on the goals of the RNA-Seq study. Most experiments require 5–200 million reads per sample, depending on organism complexity and size, along with project aims.
+
+3) Specify by using the following functions `setRNASeqLibPath()`, `setTranscriptomeFromFile()`, `setAnnotationFromFile()`, `setOutputDir()` and `setWorkingPath()` the path to your library `SRX109278`, transcriptome file, annotation file as well as the output and working directory. 
+
+4) Generate the present and absent calls for the library `SRX109278` by using `generate_calls_workflow()`. Which type of information is provided in the output files?
+
+
+```{r message=FALSE, echo=TRUE, eval=TRUE, iclude=FALSE, warning=FALSE}
+
+library(BgeeCall)
+
+# create an object of class UserMetadata and specify the species ID
+user_BgeeCall <- new("UserMetadata", species_id = "7227")
+
+# import annotation and transcriptome in the user_BgeeCall object
+# it is possible to import them using an S4 object (GRanges, DNAStringSet) or a file (gtf, fasta)
+user_BgeeCall <- setAnnotationFromFile(user_BgeeCall, "/Users/minooashtiani/Desktop/UNIL.task/annotation/Drosophila_melanogaster.BDGP6.32.51.chr.gtf.gz", "Drosophila_melanogaster.BDGP6.32.51")
+
+user_BgeeCall <- setTranscriptomeFromFile(user_BgeeCall, "/Users/minooashtiani/Desktop/UNIL.task/annotation/Drosophila_melanogaster.BDGP6.32.cdna.all.fa.gz", "Drosophila_melanogaster.BDGP6.32.51")
+
+# user <- new("UserMetadata")
+user_BgeeCall <- setWorkingPath(user_BgeeCall, "/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX109278")
+user_BgeeCall <- setOutputDir(user_BgeeCall, "/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX109278")
+
+# provide path to the directory of your RNA-Seq library
+user_BgeeCall <- setRNASeqLibPath(user_BgeeCall, "/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX109278")
+
+calls_output <- generate_calls_workflow(userMetadata = user_BgeeCall)
+
+head(read.table(calls_output$calls_tsv_path, header = TRUE), n = 5)
+
+
+
+```
+
+5) Plot the frequency of p-values for the correspondent library.
+
+```{r message=FALSE, echo=TRUE, eval=TRUE, iclude=FALSE, warning=FALSE}
+
+df<-read.table(calls_output$calls_tsv_path, header = TRUE)
+library(ggpubr)
+p <- ggboxplot(df, x = "call", y = "pValue",
+          color = "call", palette = "jco",
+          add = "jitter")
+#  Add p-value
+p
+
+hist(df$pValue, freq = FALSE, col="green", breaks = 20 )
+
+```
+
+## Run analysis: multiple Drosophila melanogaster samples
+
+1) Create a user input file describing all RNA-Seq libraries previously downloaded, see https://github.com/BgeeDB/BgeeCall/blob/develop/inst/userMetadataTemplate.tsv and the vignette of the package for more information
+
+```{r message=FALSE, echo=TRUE, eval=TRUE, iclude=FALSE, warning=FALSE}
+
+userMetadataTemplate<-tibble(species_id=rep(7227, 6),	run_ids=rep("-",6),	reads_size=rep(x = 52,6),	rnaseq_lib_path=c("/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX109278","/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX109279","/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX493950","/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX493999","/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX1720957","/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX1720958"),	transcriptome_path=rep("/Users/minooashtiani/Desktop/UNIL.task/annotation/Drosophila_melanogaster.BDGP6.32.cdna.all.fa.gz",6),	annotation_path=rep("/Users/minooashtiani/Desktop/UNIL.task/annotation/Drosophila_melanogaster.BDGP6.32.51.chr.gtf.gz",6),	output_directory=c("/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX109278","/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX109279","/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX493950","/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX493999","/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX1720957","/Users/minooashtiani/Desktop/UNIL.task/bgeecall_exercise/SRX1720958"),devStage=c("day4adult:FBdv:00007079","day4adult:FBdv:00007079","day4adult:FBdv:00007079","day4adult:FBdv:00007079","fullyFormed:UBERON:0000066","fullyFormed:UBERON:0000066"))
+
+userMetadataTemplate
+# write.table(userMetadataTemplate, file = "/Users/minooashtiani/Desktop/UNIL.task/userMetadataTemplate.tsv", row.names=FALSE, sep="\t")
+
+
+```
+
+
+2) Run the generation of present and absent calls from the user file with default values for all .
+
+```{r message=FALSE, echo=TRUE, eval=TRUE, iclude=FALSE, warning=FALSE}
+
+calls_output <- generate_calls_workflow(userFile = "/Users/minooashtiani/Desktop/UNIL.task/userMetadataTemplate.tsv")
+
+```
+
+
+3) Combine multiple libraries per species using the `merging_libraries()` function. What is the proportion of genes present?
+
+```{r message=FALSE, echo=TRUE, eval=TRUE, iclude=FALSE, warning=FALSE}
+ merging_libraries(userFile = "/Users/minooashtiani/Desktop/UNIL.task/userMetadataTemplate.tsv", approach = "BH", condition = "species_id", cutoff = 0.01, outDir = "/Users/minooashtiani/Desktop/UNIL.task")
+
+```
+
+4) Modify the input file to combine libraries per species (`species_id`) and developmental stage (`devStage`), see the structure of the file here: https://github.com/BgeeDB/BgeeCall/blob/develop/inst/userMetadataTemplate_merging.tsv 
+developmental stages of libraries :
+
+- fully formed stage (ID : UBERON:0000066) for libraries  SRX1720957 and SRX1720958
+- day 4 of adulthood (ID : FBdv:00007079) for libraries SRX493950, SRX493999, SRX109278 and SRX109279
+
+```{r message=FALSE, echo=TRUE, eval=TRUE, iclude=FALSE, warning=FALSE}
+
+merging_libraries(userFile = "/Users/minooashtiani/Desktop/UNIL.task/userMetadataTemplate.tsv", approach = "BH", condition = c("species_id", "devStage"), cutoff = 0.01, outDir =  "/Users/minooashtiani/Desktop/UNIL.task")
+
+```
+
+5) Generate the present and absent calls with a more restrictive p-value = 0.01 
+
+```{r message=FALSE, echo=TRUE, eval=TRUE, iclude=FALSE, warning=FALSE}
+# use intergenic approach with cutoff ratio 0.01
+kallisto <- new("KallistoMetadata", cutoff_type = "intergenic", cutoff = 0.01)
+
+calls_output <- generate_calls_workflow(userFile = "/Users/minooashtiani/Desktop/UNIL.task/userMetadataTemplate.tsv", abundanceMetadata = kallisto)
+```
+
+6) Get summary stats of all libraries by using `get_summary_stats()` function.
+
+```{r message=FALSE, echo=TRUE, eval=TRUE, iclude=FALSE, warning=FALSE}
+
+BgeeCall::get_summary_stats(userFile = "/Users/minooashtiani/Desktop/UNIL.task/userMetadataTemplate.tsv", outDir = "/Users/minooashtiani/Desktop/UNIL.task")
+
+```
+
+7) Plot the proportion of protein coding genes of all libraries for each p-value cut-off.
+
+```{r message=FALSE, echo=TRUE, eval=TRUE, iclude=FALSE, warning=FALSE}
+
+df<-read.table("/Users/minooashtiani/Desktop/UNIL.task/summary_Stats_All_Libraries.tsv", header = TRUE)
+df$cutoff<-as.character(df$cutoff)
+
+library(ggpubr)
+p <- ggboxplot(df, x = "libraryId", y = "proportionCodingPresent",
+          color = "cutoff", palette = "jco",
+          add = "jitter")
+#  Add p-value
+p
+
+```
+
+## Downstream analysis
+
+The aim of this part is to show you that you can go from BgeeCall results to forward analysis. 
+
+
+1) Perform a differential expression analysis between different developmental stage conditions. (Note: that in the provided dataset we have 4 samples from FBdv:00007079 and 2 samples from UBERON:0000066, so you can select just 2 samples from FBdv:00007079 (like: SRX109278 and SRX109279) to balance the analysis. Note that statistically it is recommended to use at least 3 samples of each condition for differential expression analysis).
+
+
+```{r message=FALSE, echo=TRUE, eval=TRUE, iclude=FALSE, warning=FALSE}
+library(tidyverse)
+library("DESeq2")
+
+colData<- DataFrame(row.names = c(   "SRX109278",
+             "SRX109279",
+             "SRX1720957",
+             "SRX1720958"),
+                    condition=c("day4adult:FBdv:00007079","day4adult:FBdv:00007079","fullyFormed:UBERON:0000066","fullyFormed:UBERON:0000066"))
+
+colData$condition<-as.factor(colData$condition)
+colData
+
+# coldata <- colData(gse)
+colData$condition <- relevel(colData$condition , "day4adult:FBdv:00007079")
+
+df<-read.table(calls_output[[1]]$calls_tsv_path, header = TRUE)$counts
+# df
+
+countdf<-tibble(ID=read.table(calls_output[[1]]$calls_tsv_path, header = TRUE)$id,
+  "SRX109278"=read.table(calls_output[[1]]$calls_tsv_path, header = TRUE)$counts,
+               "SRX109279"=read.table(calls_output[[2]]$calls_tsv_path, header = TRUE)$counts,
+               "SRX1720957"=read.table(calls_output[[5]]$calls_tsv_path, header = TRUE)$counts,
+             "SRX1720958"=read.table(calls_output[[6]]$calls_tsv_path, header = TRUE)$counts)
+# head(countdf)
+
+library(tidyverse)
+countdf<-countdf %>% remove_rownames %>% column_to_rownames(var="ID")
+
+countdf1<-countdf%>% mutate_all(as.integer)
+
+head(countdf1)
+
+```
+
+
+```{r message=FALSE, echo=TRUE, eval=TRUE, iclude=FALSE, warning=FALSE}
+
+cstm<- countdf1
+
+#column sums of the count
+colSums(cstm)
+
+# Normalization using DESeq2 (size factors)
+# biocLite("DESeq2")
+library(DESeq2)
+# dds <- DESeqDataSetFromMatrix(countData = cstm,
+#                          colData = colData,design = ~ condition )
+dds <- DESeqDataSetFromMatrix(countData = cstm,
+                         colData = colData,design = ~ condition )
+# names(assays(dds))
+
+# minimal pre-filtering to keep only rows that have at least 10 reads total.
+keep <- rowSums(counts(dds)) >= 10
+dds <- dds[keep,]
+rm(keep)
+
+#Estimate size factors: library size estimators 
+dds <- estimateSizeFactors( dds )
+
+## the rlog transform
+library("dplyr")
+library("ggplot2")
+rld <- rlog(dds, blind = FALSE)
+
+```
+
+```{r message=FALSE, echo=TRUE, eval=TRUE, iclude=FALSE, warning=FALSE}
+
+# ## Assessment of Overall Similarity between Samples
+sampleDists <- dist( t( assay(rld) ) )
+
+library("pheatmap")
+library("RColorBrewer")
+library(grid)
+
+sampleDistMatrix <- as.matrix( sampleDists )
+rownames(sampleDistMatrix) <- paste( rld$condition, sep="-" )
+colnames(sampleDistMatrix) <- paste( rld$condition, sep="-" )
+colors <- colorRampPalette( rev(brewer.pal(9, "Greens")) )(255)
+
+## Edit body of pheatmap:::draw_colnames, customizing it to your liking
+draw_colnames_45 <- function (coln, ...) {
+    m = length(coln)
+    x = (1:m)/m - 1/2/m
+    grid.text(coln, x = x, y = unit(0.96, "npc"), vjust = .5, 
+        hjust = 1, rot = 45, gp = gpar(...)) ## Was 'hjust=0' and 'rot=270'
+}
+
+## For pheatmap_1.0.8 and later:
+draw_colnames_45 <- function (coln, gaps, ...) {
+    coord = pheatmap:::find_coordinates(length(coln), gaps)
+    x = coord$coord - 0.5 * coord$size
+    res = textGrob(coln, x = x, y = unit(1, "npc") - unit(3,"bigpts"), vjust = 0.5, hjust = 1, rot = 45, gp = gpar(...))
+    return(res)}
+
+## 'Overwrite' default draw_colnames with your own version 
+assignInNamespace(x="draw_colnames", value="draw_colnames_45",
+ns=asNamespace("pheatmap"))
+
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows=sampleDists,
+         clustering_distance_cols=sampleDists,
+         col=colors)
+```
+
+```{r message=FALSE, echo=F, eval=TRUE, iclude=FALSE, warning=FALSE, fig.height = 8, fig.width = 8, fig.align = "center"}
+
+# PCA
+
+pcaData <- plotPCA(rld, intgroup = c( "condition"), returnData = TRUE)
+
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+
+ggplot(pcaData, aes(x = PC1, y = PC2, color = condition)) +
+  geom_point(size =3) +
+  xlab(paste0("PC1: ", percentVar[1], "% variance")) +
+  ylab(paste0("PC2: ", percentVar[2], "% variance")) +
+  coord_fixed() +
+  ggtitle("PCA with rlog data")
+
+```
+
+## Top genes : sort by log2FoldChange
+
+```{r message=FALSE, echo=TRUE, eval=TRUE, iclude=FALSE, warning=FALSE}
+
+## Differential Gene Expression Analysis
+dds$condition <- relevel(dds$condition, "day4adult:FBdv:00007079")
+
+dds <- DESeq(dds)
+res <- results(dds)
+
+dfres<-as.data.frame(res)
+
+## Summary of results
+
+summary(res)
+
+# #Top genes : sort by log2FoldChange
+resSort <- res[order(res$log2FoldChange),]
+head(resSort)
+
+```
+
+
+2) Filter the results by providing just genes with FDR < 0.01. Provide a visualization graphic as MA plot. 
+
+```{r message=FALSE, echo=TRUE, eval=TRUE, iclude=FALSE, warning=FALSE}
+# MA plot
+res.noshr <- results(dds, name="condition_fullyFormed.UBERON.0000066_vs_day4adult.FBdv.00007079")
+plotMA(res.noshr, ylim = c(-5,5))
+```
+
+```{r message=FALSE, echo=TRUE, eval=TRUE, iclude=FALSE, warning=FALSE}
+
+## Volcano plot
+library("EnhancedVolcano")
+
+# The main function is named after the package
+EnhancedVolcano(toptable = res,              # We use the shrunken log2 fold change as noise associated with low count genes is removed 
+                x = "log2FoldChange",           # Name of the column in resLFC that contains the log2 fold changes
+                y = "padj",                     # Name of the column in resLFC that contains the p-value
+                lab = rownames(res),pointSize = 2,
+  labSize = 5,  legendLabSize = 5,
+  legendIconSize = 5,  encircleSize = 1,xlim = c(-5,5))
+
+
+```
+
+
+3) Make a GO analysis. Which type of information do you retrieve? 
+
+# GO for downregulated genes 
+
+```{r message=FALSE, echo=F, eval=TRUE, iclude=FALSE, warning=FALSE, fig.height = 18, fig.width = 15, fig.align = "center"}
+library(rWikiPathways)
+
+load.libs <- c(
+  "DOSE",
+  "GO.db",
+  "GSEABase",
+  "org.Hs.eg.db",
+  "clusterProfiler",
+  "dplyr",
+  "tidyr",
+  "ggplot2",
+  "stringr",
+  "RColorBrewer",
+  "rWikiPathways",
+  "RCy3")
+
+library(RCy3)
+
+# GEenrating org.Dm.eg.db.sqlite DDB
+library(AnnotationHub) 
+hub <- AnnotationHub()
+ah_resources <- query(hub, c('Ensembl', 'Drosophila melanogaster'))
+ah_resources[ah_resources$title%in%"org.Dm.eg.db.sqlite"]
+
+org.Dm.eg.db.sqlite <- hub[["AH84121"]]
+
+# Convert fly ID to symbols
+# devtools::install_github('hangnoh/flybaseR')
+# xx<-flybaseR::id.converter(df, symbols = T)
+df<-as.data.frame(res)
+df$IDs <- row.names(res)
+
+library(plyr)
+df<-arrange(df,(stat),(log2FoldChange))
+
+genes<-df$IDs
+# write.table(genes,row.names = F,file = "/Users/minooashtiani/Desktop/UNIL.task/flyIDs.txt")
+
+IDsSymbols<-read.table("/Users/minooashtiani/Desktop/UNIL.task/FlyBase_Fields_download.txt")
+symbols<-IDsSymbols$V2
+
+downregulated<-head((symbols), n=2000)
+upregulated<-tail((symbols), n=2000)
+
+combregualted.entrez <- clusterProfiler::bitr(downregulated,fromType = "SYMBOL",toType = "ENTREZID",OrgDb = org.Dm.eg.db.sqlite)
+
+# cat("\n\nWhich column contains my new Entrez IDs?\n")
+# head(combregualted.entrez)
+
+
+# Gene Ontology
+egobp <- clusterProfiler::enrichGO(
+  gene     = combregualted.entrez[[2]],
+  # universe = bkgd.genes.entrez[[2]],
+  OrgDb    = org.Dm.eg.db.sqlite,
+  ont      = "BP",
+  pAdjustMethod = "fdr",
+  pvalueCutoff = 0.05, #p.adjust cutoff (https://github.com/GuangchuangYu/clusterProfiler/issues/104)
+  readable = TRUE)
+
+# head(egobp,10)
+#Pathway Analysis
+library(clusterProfiler)
+barplot(egobp, showCategory = 20)
+dotplot(egobp, showCategory = 20)
+goplot(egobp)
+
+```
+
+# GO for upregulated genes 
+
+```{r message=FALSE, echo=F, eval=TRUE, iclude=FALSE, warning=FALSE, fig.height = 18, fig.width = 15, fig.align = "center"}
+upregulated<-tail((symbols), n=2000)
+
+combregualted.entrez <- clusterProfiler::bitr(upregulated,fromType = "SYMBOL",toType = "ENTREZID",OrgDb = org.Dm.eg.db.sqlite)
+
+cat("\n\nWhich column contains my new Entrez IDs?\n")
+head(combregualted.entrez)
+
+
+# Gene Ontology
+egobp <- clusterProfiler::enrichGO(
+  gene     = combregualted.entrez[[2]],
+  # universe = bkgd.genes.entrez[[2]],
+  OrgDb    = org.Dm.eg.db.sqlite,
+  ont      = "BP",
+  pAdjustMethod = "fdr",
+  pvalueCutoff = 0.05, #p.adjust cutoff (https://github.com/GuangchuangYu/clusterProfiler/issues/104)
+  readable = TRUE)
+
+# head(egobp,10)
+#Pathway Analysis
+library(clusterProfiler)
+barplot(egobp, showCategory = 20)
+dotplot(egobp, showCategory = 20)
+goplot(egobp)
+```
+
