@@ -144,7 +144,7 @@ p <- ggboxplot(df, x = "call", y = "pValue",
 #  Add p-value
 p
 
-hist(df$pValue, freq = FALSE, col="green", breaks = 20 )
+hist(df$pValue, freq = T, col="green", breaks = 20 )
 
 ```
 
@@ -386,7 +386,7 @@ res.noshr <- results(dds, name="condition_fullyFormed.UBERON.0000066_vs_day4adul
 plotMA(res.noshr, ylim = c(-5,5))
 ```
 
-```{r message=FALSE, echo=TRUE, eval=TRUE, iclude=FALSE, warning=FALSE}
+```{r message=FALSE,warning=FALSE, fig.height = 18, fig.width = 15, fig.align = "center"}
 
 ## Volcano plot
 library("EnhancedVolcano")
@@ -407,7 +407,7 @@ EnhancedVolcano(toptable = res,              # We use the shrunken log2 fold cha
 
 # GO for downregulated genes 
 
-```{r message=FALSE, echo=F, eval=TRUE, iclude=FALSE, warning=FALSE, fig.height = 18, fig.width = 15, fig.align = "center"}
+```{r message=FALSE, warning=FALSE, fig.height = 18, fig.width = 15, fig.align = "center"}
 library(rWikiPathways)
 
 load.libs <- c(
@@ -479,7 +479,7 @@ goplot(egobp)
 
 # GO for upregulated genes 
 
-```{r message=FALSE, echo=F, eval=TRUE, iclude=FALSE, warning=FALSE, fig.height = 18, fig.width = 15, fig.align = "center"}
+```{r message=FALSE, warning=FALSE, fig.height = 18, fig.width = 15, fig.align = "center"}
 upregulated<-tail((symbols), n=2000)
 
 combregualted.entrez <- clusterProfiler::bitr(upregulated,fromType = "SYMBOL",toType = "ENTREZID",OrgDb = org.Dm.eg.db.sqlite)
